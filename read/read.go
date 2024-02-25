@@ -15,11 +15,8 @@ func Execute() float64 {
 	chunks := readChunk()
 	fixedChunks := capUntilLastEndOfLine(chunks)
 	lines := parseLines(fixedChunks)
-	floats := processLine(lines)
+	wss := processLine(lines)
 
-	for f := range floats {
-		result += f
-	}
 	return result
 }
 
@@ -105,8 +102,13 @@ func parseLines(in chan []byte) chan string {
 	return out
 }
 
-func processLine(in chan string) chan float64 {
-	out := make(chan float64)
+type ws struct {
+	city    string
+	medTemp float64
+}
+
+func processLine(in chan string) chan ws {
+	out := make(chan ws)
 
 	var wg sync.WaitGroup
 
@@ -120,7 +122,7 @@ func processLine(in chan string) chan float64 {
 				if err != nil {
 					break
 				}
-				out <- f
+				out <- ws{line[:i-1], f}
 				break
 			}
 		}
@@ -137,4 +139,10 @@ func processLine(in chan string) chan float64 {
 	}()
 
 	return out
+}
+
+func processStation(in chan ws) map[string][]float64 {
+	result := make(map[string][]float64, 450)
+
+	return result
 }
