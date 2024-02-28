@@ -2,147 +2,37 @@ package read
 
 import (
 	"bufio"
-	"errors"
-	"io"
 	"os"
-	"strconv"
-	"strings"
-	"sync"
 )
 
 func Execute() float64 {
 	result := 0.0
-	chunks := readChunk()
-	fixedChunks := capUntilLastEndOfLine(chunks)
-	lines := parseLines(fixedChunks)
-	wss := processLine(lines)
-
+	lines := readChunks("input.txt")
+	for l := range lines {
+		println(l)
+	}
 	return result
 }
 
-func readChunk() chan []byte {
-	out := make(chan []byte, 100)
-	go func() {
-		f, err := os.Open("input.txt")
+func readChunks(filename string) chan string {
+	out := make(chan string, 100)
 
+	go func() {
+		f, err := os.Open(filename)
 		if err != nil {
 			panic(err)
 		}
-
 		defer f.Close()
 
-		b := bufio.NewReader(f)
+		rd := bufio.NewScanner(f)
 
-		buffer := make([]byte, 1024*256)
-
-		for {
-			_, err := b.Read(buffer)
-
-			if err != nil && errors.Is(err, io.EOF) {
-				break
-			}
-
-			out <- buffer
-
+		for rd.Scan() {
+			line := rd.Text()
+			out <- line
 		}
 
 		close(out)
 	}()
-	return out
-}
-
-func capUntilLastEndOfLine(in chan []byte) chan []byte {
-	out := make(chan []byte, 100)
-	go func() {
-		for chunk := range in {
-			length := len(chunk)
-			for i := length - 1; i > 0; i-- {
-				if chunk[i] == '\n' {
-					chunk = chunk[:i]
-					break
-				}
-			}
-			out <- chunk
-		}
-		close(out)
-	}()
-	return out
-}
-
-func parseLines(in chan []byte) chan string {
-	out := make(chan string, 100)
-
-	var wg sync.WaitGroup
-
-	process := func(chunk []byte) {
-		defer wg.Done()
-		var builder strings.Builder
-
-		for _, b := range chunk {
-			if b == '\n' {
-				str := builder.String()
-				builder.Reset()
-				out <- str
-			} else {
-				builder.WriteByte(b)
-			}
-		}
-	}
-
-	go func() {
-		for chunk := range in {
-			wg.Add(1)
-			go process(chunk)
-		}
-
-		wg.Wait()
-		close(out)
-	}()
 
 	return out
-}
-
-type ws struct {
-	city    string
-	medTemp float64
-}
-
-func processLine(in chan string) chan ws {
-	out := make(chan ws)
-
-	var wg sync.WaitGroup
-
-	process := func(line string) {
-		defer wg.Done()
-
-		for i, b := range line {
-			if b == ';' {
-				floatStr := line[i+1:]
-				f, err := strconv.ParseFloat(floatStr, 64)
-				if err != nil {
-					break
-				}
-				out <- ws{line[:i-1], f}
-				break
-			}
-		}
-	}
-
-	go func() {
-		for line := range in {
-			wg.Add(1)
-			go process(line)
-		}
-
-		wg.Wait()
-		close(out)
-	}()
-
-	return out
-}
-
-func processStation(in chan ws) map[string][]float64 {
-	result := make(map[string][]float64, 450)
-
-	return result
 }
