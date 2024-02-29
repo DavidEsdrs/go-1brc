@@ -2,23 +2,30 @@ package read
 
 import (
 	"bufio"
+	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func Execute() float64 {
 	result := 0.0
 	lines := readChunks("input.txt")
-	wss := splitChunk(lines)
-	// stations := processStation(wss)
+	fixedChunks := fixChunks(lines)
+	wss := splitChunk(fixedChunks)
+	stations := processStation(wss)
 	processStation(wss)
+	for _, v := range stations {
+		fmt.Printf("%#v\n", v)
+	}
 	return result
 }
 
 func readChunks(filename string) chan string {
-	out := make(chan string, 100)
+	out := make(chan string)
 
 	go func() {
 		f, err := os.Open(filename)
@@ -27,14 +34,55 @@ func readChunks(filename string) chan string {
 		}
 		defer f.Close()
 
-		rd := bufio.NewScanner(f)
+		bufferSize := 57
+		// buffer := make([]byte, 1024*256)
+		buffer := make([]byte, bufferSize)
 
-		for rd.Scan() {
-			line := rd.Text()
-			out <- line
+		rd := bufio.NewReader(f)
+
+		for {
+			n, err := rd.Read(buffer)
+
+			if err != nil && err == io.EOF {
+				break
+			}
+
+			out <- string(buffer[:n])
 		}
 
 		close(out)
+	}()
+
+	return out
+}
+
+func fixChunks(in chan string) chan string {
+	out := make(chan string, 100)
+
+	go func() {
+		defer close(out)
+
+		var lastOverflow string
+
+		for chunk := range in {
+			var builder strings.Builder
+
+			builder.WriteString(lastOverflow)
+
+			for i := 0; i < len(chunk); i++ {
+				if chunk[i] == '\n' {
+					str := builder.String()
+					builder.Reset()
+					if str != "" {
+						out <- str
+					}
+				} else {
+					builder.WriteByte(chunk[i])
+				}
+			}
+
+			lastOverflow = builder.String()
+		}
 	}()
 
 	return out
@@ -49,30 +97,38 @@ type ws struct {
 func splitChunk(in chan string) chan ws {
 	out := make(chan ws, 100)
 
+	var wg sync.WaitGroup
+
 	go func() {
 
 		for l := range in {
-			segs := strings.Split(l, ";")
+			wg.Add(1)
 
-			if len(segs) != 2 {
-				panic("wrong")
-			}
+			go func(l string) {
+				defer wg.Done()
 
-			city := segs[0]
+				segs := strings.Split(l, ";")
 
-			avgTemp, err := strconv.ParseFloat(segs[1], 64)
+				if len(segs) != 2 {
+					panic("wrong seg count")
+				}
 
-			if err != nil {
-				panic(err)
-			}
+				city := segs[0]
 
-			result := ws{city: city, avgT: avgTemp}
+				avgTemp, err := strconv.ParseFloat(segs[1], 64)
 
-			out <- result
+				if err != nil {
+					panic(err)
+				}
+
+				result := ws{city: city, avgT: avgTemp}
+
+				out <- result
+			}(l)
 		}
 
+		wg.Wait()
 		close(out)
-
 	}()
 
 	return out
