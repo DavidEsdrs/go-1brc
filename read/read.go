@@ -8,19 +8,22 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 func Execute() float64 {
 	result := 0.0
 	lines := readChunks("input.txt")
 	fixedChunks := fixChunks(lines)
-	wss := splitChunk(fixedChunks)
+	segs := splitChunk(fixedChunks)
+	wss := parseSegments(segs)
 	stations := processStation(wss)
-	processStation(wss)
-	for _, v := range stations {
-		fmt.Printf("%#v\n", v)
+
+	stations = mergeSort(stations)
+
+	for _, s := range stations {
+		fmt.Printf("%v=%v/%v/%v\n", s.city, s.minT, s.avgT, s.maxT)
 	}
+
 	return result
 }
 
@@ -28,15 +31,15 @@ func readChunks(filename string) chan string {
 	out := make(chan string)
 
 	go func() {
+		defer close(out)
+
 		f, err := os.Open(filename)
 		if err != nil {
 			panic(err)
 		}
 		defer f.Close()
 
-		bufferSize := 57
-		// buffer := make([]byte, 1024*256)
-		buffer := make([]byte, bufferSize)
+		buffer := make([]byte, 1024*4)
 
 		rd := bufio.NewReader(f)
 
@@ -49,15 +52,13 @@ func readChunks(filename string) chan string {
 
 			out <- string(buffer[:n])
 		}
-
-		close(out)
 	}()
 
 	return out
 }
 
 func fixChunks(in chan string) chan string {
-	out := make(chan string, 100)
+	out := make(chan string, 1000)
 
 	go func() {
 		defer close(out)
@@ -94,47 +95,54 @@ type ws struct {
 	count            int
 }
 
-func splitChunk(in chan string) chan ws {
-	out := make(chan ws, 100)
-
-	var wg sync.WaitGroup
+func splitChunk(in chan string) chan [2]string {
+	out := make(chan [2]string, 1000)
 
 	go func() {
+		defer close(out)
+
+		var result [2]string = [2]string{}
 
 		for l := range in {
-			wg.Add(1)
+			segs := strings.Split(l, ";")
 
-			go func(l string) {
-				defer wg.Done()
+			if len(segs) != 2 {
+				panic("wrong seg count")
+			}
 
-				segs := strings.Split(l, ";")
+			result[0] = segs[0]
+			result[1] = segs[1]
 
-				if len(segs) != 2 {
-					panic("wrong seg count")
-				}
-
-				city := segs[0]
-
-				avgTemp, err := strconv.ParseFloat(segs[1], 64)
-
-				if err != nil {
-					panic(err)
-				}
-
-				result := ws{city: city, avgT: avgTemp}
-
-				out <- result
-			}(l)
+			out <- result
 		}
-
-		wg.Wait()
-		close(out)
 	}()
 
 	return out
 }
 
-func processStation(in chan ws) map[string]ws {
+func parseSegments(in chan [2]string) chan ws {
+	out := make(chan ws, 1000)
+
+	go func() {
+		defer close(out)
+
+		for segs := range in {
+			avgTemp, err := strconv.ParseFloat(segs[1], 64)
+
+			if err != nil {
+				panic(err)
+			}
+
+			result := ws{city: segs[0], avgT: avgTemp}
+
+			out <- result
+		}
+	}()
+
+	return out
+}
+
+func processStation(in chan ws) []ws {
 	result := make(map[string]ws)
 
 	for s := range in {
@@ -168,6 +176,45 @@ func processStation(in chan ws) map[string]ws {
 		v.avgT = math.Ceil(v.avgT)
 		result[k] = v
 	}
+
+	var list []ws
+
+	for _, s := range result {
+		list = append(list, s)
+	}
+
+	return list
+}
+
+func mergeSort(items []ws) []ws {
+	if len(items) < 2 {
+		return items
+	}
+
+	mid := len(items) / 2
+	left := mergeSort(items[:mid])
+	right := mergeSort(items[mid:])
+
+	return merge(left, right)
+}
+
+func merge(a, b []ws) []ws {
+	result := make([]ws, 0)
+	i, j := 0, 0
+
+	for i < len(a) && j < len(b) {
+		if a[i].city[0] < b[j].city[0] {
+			result = append(result, a[i])
+			i++
+		} else {
+			result = append(result, b[j])
+			j++
+		}
+	}
+
+	// Append any remaining elements from both slices
+	result = append(result, a[i:]...)
+	result = append(result, b[j:]...)
 
 	return result
 }
