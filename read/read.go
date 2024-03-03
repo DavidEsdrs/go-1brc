@@ -64,10 +64,9 @@ func fixChunks(in chan string) chan string {
 		defer close(out)
 
 		var lastOverflow string
+		var builder strings.Builder
 
 		for chunk := range in {
-			var builder strings.Builder
-
 			builder.WriteString(lastOverflow)
 
 			for i := 0; i < len(chunk); i++ {
@@ -83,6 +82,7 @@ func fixChunks(in chan string) chan string {
 			}
 
 			lastOverflow = builder.String()
+			builder.Reset()
 		}
 	}()
 
@@ -120,8 +120,8 @@ func splitChunk(in chan string) chan [2]string {
 	return out
 }
 
-func parseSegments(in chan [2]string) chan ws {
-	out := make(chan ws, 1000)
+func parseSegments(in chan [2]string) chan *ws {
+	out := make(chan *ws, 1000)
 
 	go func() {
 		defer close(out)
@@ -135,14 +135,14 @@ func parseSegments(in chan [2]string) chan ws {
 
 			result := ws{city: segs[0], avgT: avgTemp}
 
-			out <- result
+			out <- &result
 		}
 	}()
 
 	return out
 }
 
-func processStation(in chan ws) []ws {
+func processStation(in chan *ws) []ws {
 	result := make(map[string]ws)
 
 	for s := range in {
